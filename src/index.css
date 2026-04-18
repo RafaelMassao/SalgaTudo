@@ -1,0 +1,141 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =====================================================================
+   SALGATUDO — Design System
+   Paleta:
+   - Laranja Salgatudo: #FF7410 (primary)
+   - Fundo geral: #ECECEC
+   - Superfícies: #FFFFFF
+   - Texto principal: #1A1A1A
+   - Texto secundário: #666666
+   - Sucesso: #22C55E
+   - Erro: #EF4444
+   ===================================================================== */
+
+@layer base {
+  :root {
+    /* Brand */
+    --background: 0 0% 92.5%;          /* #ECECEC */
+    --foreground: 0 0% 10.2%;          /* #1A1A1A */
+
+    --card: 0 0% 100%;                 /* #FFFFFF */
+    --card-foreground: 0 0% 10.2%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10.2%;
+
+    --primary: 21 100% 53%;            /* #FF7410 */
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 21 100% 96%;       /* fundo suave laranja */
+
+    --secondary: 0 0% 100%;
+    --secondary-foreground: 0 0% 10.2%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 40%;      /* #666666 */
+
+    --accent: 21 100% 96%;
+    --accent-foreground: 21 100% 40%;
+
+    --success: 142 71% 45%;            /* #22C55E */
+    --success-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;          /* #EF4444 */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 88%;
+    --input: 0 0% 88%;
+    --ring: 21 100% 53%;               /* foco laranja */
+
+    --radius: 0.75rem;                 /* 12px cards */
+
+    /* Sombras com tom laranja Salgatudo */
+    --shadow-orange-sm: 0 1px 2px 0 hsl(21 100% 53% / 0.15);
+    --shadow-orange: 0 4px 12px -2px hsl(21 100% 53% / 0.18);
+    --shadow-orange-lg: 0 12px 30px -8px hsl(21 100% 53% / 0.25);
+    --shadow-card: 0 2px 8px -2px hsl(0 0% 0% / 0.06);
+
+    /* Gradientes */
+    --gradient-primary: linear-gradient(135deg, hsl(21 100% 53%), hsl(15 100% 58%));
+
+    /* Sidebar */
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 10.2%;
+    --sidebar-primary: 21 100% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 21 100% 96%;
+    --sidebar-accent-foreground: 21 100% 40%;
+    --sidebar-border: 0 0% 90%;
+    --sidebar-ring: 21 100% 53%;
+  }
+
+  .dark {
+    --background: 0 0% 8%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 12%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 12%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 21 100% 53%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 21 50% 18%;
+    --secondary: 0 0% 16%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 21 50% 18%;
+    --accent-foreground: 21 100% 70%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 21 100% 53%;
+    --sidebar-background: 0 0% 10%;
+    --sidebar-foreground: 0 0% 96%;
+    --sidebar-primary: 21 100% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 16%;
+    --sidebar-accent-foreground: 21 100% 70%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 21 100% 53%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+/* Scrollbar sempre visível para a lista do carrinho do PDV */
+@layer utilities {
+  .cart-scroll {
+    scrollbar-width: auto;
+    scrollbar-color: hsl(var(--primary)) hsl(var(--muted));
+  }
+  .cart-scroll::-webkit-scrollbar {
+    width: 12px;
+  }
+  .cart-scroll::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 999px;
+  }
+  .cart-scroll::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary));
+    border: 2px solid hsl(var(--muted));
+    border-radius: 999px;
+  }
+  .cart-scroll::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.85);
+  }
+}
