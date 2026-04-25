@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Search, Package } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,16 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -31,15 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -47,18 +28,6 @@ import { useAuth } from "@/hooks/useAuth";
 interface Category {
   id: string;
   name: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  cost: number | null;
-  stock_quantity: number;
-  min_stock_alert: number;
-  category_id: string | null;
-  categories?: { name: string } | null;
 }
 
 const emptyForm = {
@@ -74,26 +43,10 @@ const emptyForm = {
 const Produtos = () => {
   const qc = useQueryClient();
   const { user, role } = useAuth();
-  const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [showNewCategory, setShowNewCategory] = useState(false);
-
-  // Queries
-  const { data: products = [], isLoading } = useQuery({
-    queryKey: ["products"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("products")
-        .select("*, categories(name)")
-        .order("name");
-      if (error) throw error;
-      return (data ?? []) as Product[];
-    },
-  });
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
@@ -107,29 +60,16 @@ const Produtos = () => {
     },
   });
 
-  // Reset form when opening dialog
   useEffect(() => {
-    if (dialogOpen && editing) {
-      setForm({
-        name: editing.name,
-        description: editing.description ?? "",
-        price: String(editing.price),
-        cost: editing.cost != null ? String(editing.cost) : "",
-        stock_quantity: String(editing.stock_quantity),
-        min_stock_alert: String(editing.min_stock_alert),
-        category_id: editing.category_id ?? "",
-      });
-    } else if (dialogOpen) {
+    if (dialogOpen) {
       setForm(emptyForm);
-    }
-    if (!dialogOpen) {
+    } else {
       setShowNewCategory(false);
       setNewCategoryName("");
     }
-  }, [dialogOpen, editing]);
+  }, [dialogOpen]);
 
-  // Mutations
-  const upsertMutation = useMutation({
+  const createMutation = useMutation({
     mutationFn: async () => {
       const payload = {
         name: form.name.trim(),
@@ -141,74 +81,28 @@ const Produtos = () => {
         category_id: form.category_id || null,
       };
 
-      if (editing) {
-        const previousQty = editing.stock_quantity;
-        const { error } = await supabase
-          .from("products")
-          .update(payload)
-          .eq("id", editing.id);
-        if (error) throw error;
-
-        // Se quantidade mudou, registra movimento de ajuste
-        if (payload.stock_quantity !== previousQty) {
-          await supabase.from("stock_movements").insert({
-            product_id: editing.id,
-            movement_type: "adjustment",
-            quantity: payload.stock_quantity - previousQty,
-            user_id: user?.id ?? null,
-            notes: "Ajuste via edição de produto",
-          });
-        }
-        return "updated";
-      } else {
-        const { data, error } = await supabase
-          .from("products")
-          .insert(payload)
-          .select()
-          .single();
-        if (error) throw error;
-
-        if (payload.stock_quantity > 0) {
-          await supabase.from("stock_movements").insert({
-            product_id: data.id,
-            movement_type: "in",
-            quantity: payload.stock_quantity,
-            user_id: user?.id ?? null,
-            notes: "Estoque inicial",
-          });
-        }
-        return "created";
-      }
-    },
-    onSuccess: (action) => {
-      qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success(action === "updated" ? "Produto atualizado!" : "Produto criado!");
-      setDialogOpen(false);
-      setEditing(null);
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const product = products.find((p) => p.id === id);
-      const { error } = await supabase.from("products").delete().eq("id", id);
+      const { data, error } = await supabase
+        .from("products")
+        .insert(payload)
+        .select()
+        .single();
       if (error) throw error;
-      await supabase.from("access_logs").insert({
-        user_id: user?.id ?? null,
-        user_email: user?.email ?? null,
-        event_type: "sensitive_action",
-        action: "product.delete",
-        entity_type: "product",
-        entity_id: id,
-        details: product ? { name: product.name } : null,
-        user_agent: navigator.userAgent,
-      });
+
+      if (payload.stock_quantity > 0) {
+        await supabase.from("stock_movements").insert({
+          product_id: data.id,
+          movement_type: "in",
+          quantity: payload.stock_quantity,
+          user_id: user?.id ?? null,
+          notes: "Estoque inicial",
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Produto excluído!");
-      setDeleteId(null);
+      qc.invalidateQueries({ queryKey: ["products-stock"] });
+      toast.success("Produto cadastrado!");
+      setDialogOpen(false);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -236,152 +130,48 @@ const Produtos = () => {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Filter
-  const filtered = products.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  // Submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return toast.error("Informe o nome do produto.");
     if (!form.price || Number(form.price) < 0) return toast.error("Preço inválido.");
-    upsertMutation.mutate();
+    createMutation.mutate();
   };
 
   return (
-    <AppLayout title="Produtos">
-      {/* Header de ações */}
-      <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Produtos</h2>
-          <p className="text-sm text-muted-foreground">
-            Gerencie seu catálogo, preços e estoque inicial.
+    <AppLayout title="Cadastro de Produtos">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-foreground">Cadastro de Produtos</h2>
+        <p className="text-sm text-muted-foreground">
+          Cadastre novos produtos no catálogo. Para movimentar estoque ou excluir, use a tela de Estoque.
+        </p>
+      </div>
+
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-xl bg-card p-10 shadow-card">
+        <div className="rounded-full bg-primary-soft p-4">
+          <Package className="h-10 w-10 text-primary" />
+        </div>
+        <div className="text-center">
+          <h3 className="text-lg font-semibold text-foreground">Novo produto</h3>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            Clique no botão abaixo para adicionar um produto ao catálogo (nome, preço, custo, categoria e estoque inicial).
           </p>
         </div>
         <Button
           variant="primary"
-          onClick={() => {
-            setEditing(null);
-            setDialogOpen(true);
-          }}
+          size="lg"
+          onClick={() => setDialogOpen(true)}
         >
           <Plus className="h-4 w-4" />
           Adicionar Produto
         </Button>
       </div>
 
-      {/* Busca */}
-      <div className="relative mb-4 max-w-md">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar produto pelo nome..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
-      </div>
-
-      {/* Tabela */}
-      <div className="overflow-hidden rounded-xl bg-card shadow-card">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-muted/40 hover:bg-muted/40">
-              <TableHead className="font-semibold">Produto</TableHead>
-              <TableHead className="font-semibold">Categoria</TableHead>
-              <TableHead className="text-right font-semibold">Preço</TableHead>
-              <TableHead className="text-right font-semibold">Estoque</TableHead>
-              <TableHead className="text-right font-semibold">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center text-muted-foreground">
-                  Carregando produtos...
-                </TableCell>
-              </TableRow>
-            ) : filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center">
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <Package className="h-8 w-8 opacity-40" />
-                    <p>{search ? "Nenhum produto encontrado." : "Nenhum produto cadastrado ainda."}</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((p) => {
-                const isLow = p.stock_quantity <= p.min_stock_alert;
-                return (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <div className="font-medium text-foreground">{p.name}</div>
-                      {p.description && (
-                        <div className="text-xs text-muted-foreground line-clamp-1">
-                          {p.description}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {p.categories?.name ?? "—"}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-primary">
-                      R$ {Number(p.price).toFixed(2).replace(".", ",")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant="outline"
-                        className={
-                          isLow
-                            ? "border-destructive/30 bg-destructive/10 text-destructive"
-                            : "border-success/30 bg-success/10 text-success"
-                        }
-                      >
-                        {p.stock_quantity} un
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => {
-                            setEditing(p);
-                            setDialogOpen(true);
-                          }}
-                          aria-label="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="hover:text-destructive"
-                          onClick={() => setDeleteId(p.id)}
-                          aria-label="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Dialog de criar/editar */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? "Editar produto" : "Novo produto"}</DialogTitle>
+            <DialogTitle>Novo produto</DialogTitle>
             <DialogDescription>
-              {editing
-                ? "Atualize as informações do produto."
-                : "Cadastre um novo produto no catálogo."}
+              Cadastre um novo produto no catálogo.
             </DialogDescription>
           </DialogHeader>
 
@@ -534,34 +324,13 @@ const Produtos = () => {
               <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" variant="primary" disabled={upsertMutation.isPending}>
-                {upsertMutation.isPending ? "Salvando..." : "Salvar"}
+              <Button type="submit" variant="primary" disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Salvando..." : "Salvar"}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
-
-      {/* Confirm delete */}
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação é permanente. As vendas anteriores deste produto também serão removidas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-              className="bg-destructive text-destructive-foreground hover:brightness-110"
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </AppLayout>
   );
 };

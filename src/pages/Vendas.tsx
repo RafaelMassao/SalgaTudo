@@ -76,7 +76,13 @@ const Vendas = () => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [customerId, setCustomerId] = useState<string>("none");
   const [payment, setPayment] = useState<PaymentMethod>("dinheiro");
+  const [cashReceived, setCashReceived] = useState<string>("");
   const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Limpa o valor recebido ao trocar método de pagamento
+  useEffect(() => {
+    if (payment !== "dinheiro") setCashReceived("");
+  }, [payment]);
 
   // Scroll do carrinho com indicadores
   const cartListRef = useRef<HTMLDivElement>(null);
@@ -144,6 +150,17 @@ const Vendas = () => {
     [cart],
   );
 
+  const cashReceivedNum = useMemo(() => {
+    const v = parseFloat(cashReceived.replace(",", "."));
+    return Number.isFinite(v) ? v : 0;
+  }, [cashReceived]);
+  const change = useMemo(
+    () => Math.max(0, cashReceivedNum - total),
+    [cashReceivedNum, total],
+  );
+  const cashShort =
+    payment === "dinheiro" && cashReceived !== "" && cashReceivedNum < total;
+
   const addToCart = (p: Product) => {
     if (p.stock_quantity <= 0) {
       toast.error("Sem estoque disponível");
@@ -196,6 +213,7 @@ const Vendas = () => {
     setCart([]);
     setCustomerId("none");
     setPayment("dinheiro");
+    setCashReceived("");
   };
 
   const finalize = useMutation({
@@ -514,6 +532,59 @@ const Vendas = () => {
               </span>
             </div>
 
+            {payment === "dinheiro" && cart.length > 0 && (
+              <div className="w-full space-y-2 rounded-lg border border-border p-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    Valor pago pelo cliente
+                  </label>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    placeholder="0,00"
+                    value={cashReceived}
+                    onChange={(e) => setCashReceived(e.target.value)}
+                    className={cashShort ? "border-destructive" : ""}
+                  />
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {[total, 20, 50, 100, 200].map((v, idx) => {
+                      const val = idx === 0 ? total : v;
+                      if (idx > 0 && val < total) return null;
+                      const label = idx === 0 ? "Exato" : formatBRL(val);
+                      return (
+                        <Button
+                          key={`${idx}-${val}`}
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setCashReceived(val.toFixed(2))}
+                        >
+                          {label}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div
+                  className={`flex items-center justify-between rounded-md px-2 py-1.5 text-sm ${
+                    cashShort
+                      ? "bg-destructive/10 text-destructive"
+                      : "bg-success/10 text-success"
+                  }`}
+                >
+                  <span className="font-medium">
+                    {cashShort ? "Falta" : "Troco"}
+                  </span>
+                  <span className="text-base font-bold">
+                    {formatBRL(cashShort ? total - cashReceivedNum : change)}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="flex w-full gap-2">
               <Button
                 variant="outline"
@@ -527,7 +598,7 @@ const Vendas = () => {
                 variant="primary"
                 className="flex-1"
               onClick={() => setConfirmOpen(true)}
-                disabled={cart.length === 0 || finalize.isPending}
+                disabled={cart.length === 0 || finalize.isPending || cashShort}
               >
                 {finalize.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -614,6 +685,23 @@ const Vendas = () => {
               {formatBRL(total)}
             </span>
           </div>
+
+          {payment === "dinheiro" && cashReceived !== "" && !cashShort && (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-xs text-muted-foreground">Valor pago</p>
+                <p className="font-semibold text-foreground">
+                  {formatBRL(cashReceivedNum)}
+                </p>
+              </div>
+              <div className="rounded-lg border border-success/30 bg-success/10 p-3">
+                <p className="text-xs text-success">Troco</p>
+                <p className="text-lg font-extrabold text-success">
+                  {formatBRL(change)}
+                </p>
+              </div>
+            </div>
+          )}
 
           <DialogFooter className="gap-2 sm:gap-2">
             <Button

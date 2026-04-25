@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History, Trash2 } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -71,6 +81,7 @@ const Estoque = () => {
   const [type, setType] = useState<MovementType>("in");
   const [qty, setQty] = useState("");
   const [notes, setNotes] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products-stock"],
@@ -148,6 +159,32 @@ const Estoque = () => {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (product: Product) => {
+      const { error } = await supabase.from("products").delete().eq("id", product.id);
+      if (error) throw error;
+      await supabase.from("access_logs").insert({
+        user_id: user?.id ?? null,
+        user_email: user?.email ?? null,
+        event_type: "sensitive_action",
+        action: "product.delete",
+        entity_type: "product",
+        entity_id: product.id,
+        details: { name: product.name },
+        user_agent: navigator.userAgent,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["products-stock"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-low-stock"] });
+      toast.success("Produto excluído!");
+      setDeleteTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
@@ -174,9 +211,11 @@ const Estoque = () => {
           <TabsTrigger value="produtos">
             <Boxes className="mr-2 h-4 w-4" /> Produtos
           </TabsTrigger>
-          <TabsTrigger value="historico">
-            <History className="mr-2 h-4 w-4" /> Histórico
-          </TabsTrigger>
+          {isAdmin && (
+            <TabsTrigger value="historico">
+              <History className="mr-2 h-4 w-4" /> Histórico
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="produtos" className="mt-4">
@@ -264,6 +303,15 @@ const Estoque = () => {
                                   onClick={() => openMovement(p, "adjustment")}
                                 >
                                   <Settings2 className="h-4 w-4" /> Ajuste
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setDeleteTarget(p)}
+                                  className="text-destructive hover:text-destructive"
+                                  aria-label="Excluir produto"
+                                >
+                                  <Trash2 className="h-4 w-4" /> Excluir
                                 </Button>
                               </>
                             )}
@@ -417,6 +465,31 @@ const Estoque = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget && (
+                <>
+                  O produto <strong>{deleteTarget.name}</strong> será removido do catálogo.
+                  Esta ação é permanente e as vendas anteriores deste produto também serão removidas.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget)}
+              className="bg-destructive text-destructive-foreground hover:brightness-110"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };
