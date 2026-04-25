@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   ShoppingCart,
-  Package,
   Boxes,
   BarChart3,
   Users,
@@ -34,7 +33,7 @@ const navItems: { title: string; url: string; icon: any; roles: Role[] }[] = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, roles: ["admin", "employee"] },
   { title: "Vendas (PDV)", url: "/vendas", icon: ShoppingCart, roles: ["admin", "employee"] },
   { title: "Histórico", url: "/historico", icon: History, roles: ["admin", "employee"] },
-  { title: "Cadastro de Produtos", url: "/produtos", icon: Package, roles: ["admin"] },
+  
   { title: "Estoque", url: "/estoque", icon: Boxes, roles: ["admin", "employee"] },
   { title: "Clientes", url: "/clientes", icon: Users, roles: ["admin", "employee"] },
   { title: "Relatórios", url: "/relatorios", icon: BarChart3, roles: ["admin"] },
