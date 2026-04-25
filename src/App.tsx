@@ -9,7 +9,7 @@ import { AdminRoute } from "@/components/AdminRoute";
 import { SystemAdminRoute } from "@/components/SystemAdminRoute";
 import Index from "./pages/Index.tsx";
 import Auth from "./pages/Auth.tsx";
-import Produtos from "./pages/Produtos.tsx";
+
 import Vendas from "./pages/Vendas.tsx";
 import Estoque from "./pages/Estoque.tsx";
 import Historico from "./pages/Historico.tsx";
@@ -36,14 +36,6 @@ const App = () => (
                 <ProtectedRoute>
                   <Index />
                 </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/produtos"
-              element={
-                <AdminRoute>
-                  <Produtos />
-                </AdminRoute>
               }
             />
             <Route
