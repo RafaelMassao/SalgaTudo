@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History, Trash2 } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History, Trash2, Pencil } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,10 +50,29 @@ type MovementType = "in" | "out" | "adjustment";
 interface Product {
   id: string;
   name: string;
+  description?: string | null;
+  price?: number;
+  cost?: number;
   stock_quantity: number;
   min_stock_alert: number;
+  category_id?: string | null;
   categories?: { name: string } | null;
 }
+
+interface Category {
+  id: string;
+  name: string;
+}
+
+const emptyEditForm = {
+  name: "",
+  description: "",
+  price: "",
+  cost: "",
+  stock_quantity: "0",
+  min_stock_alert: "5",
+  category_id: "",
+};
 
 interface Movement {
   id: string;
@@ -82,17 +101,32 @@ const Estoque = () => {
   const [qty, setQty] = useState("");
   const [notes, setNotes] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const [editTarget, setEditTarget] = useState<Product | null>(null);
+  const [editForm, setEditForm] = useState(emptyEditForm);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products-stock"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, name, stock_quantity, min_stock_alert, categories(name)")
+        .select("id, name, description, price, cost, stock_quantity, min_stock_alert, category_id, categories(name)")
         .order("name");
       if (error) throw error;
       return (data ?? []) as unknown as Product[];
     },
+  });
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("id, name")
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as Category[];
+    },
+    enabled: isAdmin,
   });
 
   const { data: movements = [] } = useQuery({
@@ -185,6 +219,52 @@ const Estoque = () => {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!editTarget) throw new Error("Produto não selecionado.");
+      if (!editForm.name.trim()) throw new Error("Informe o nome.");
+      const priceNum = Number(editForm.price);
+      if (Number.isNaN(priceNum) || priceNum < 0) throw new Error("Preço inválido.");
+      const newStock = Number(editForm.stock_quantity);
+      if (Number.isNaN(newStock) || newStock < 0) throw new Error("Estoque inválido.");
+
+      const payload = {
+        name: editForm.name.trim(),
+        description: editForm.description.trim() || null,
+        price: priceNum,
+        cost: editForm.cost ? Number(editForm.cost) : 0,
+        stock_quantity: newStock,
+        min_stock_alert: Number(editForm.min_stock_alert || 0),
+        category_id: editForm.category_id || null,
+      };
+      const { error } = await supabase
+        .from("products")
+        .update(payload)
+        .eq("id", editTarget.id);
+      if (error) throw error;
+
+      const delta = newStock - editTarget.stock_quantity;
+      if (delta !== 0) {
+        await supabase.from("stock_movements").insert({
+          product_id: editTarget.id,
+          movement_type: "adjustment",
+          quantity: delta,
+          user_id: user?.id ?? null,
+          notes: "Ajuste via edição de produto",
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["products-stock"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-low-stock"] });
+      toast.success("Produto atualizado!");
+      setEditTarget(null);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
@@ -195,6 +275,19 @@ const Estoque = () => {
     setQty(t === "adjustment" ? String(p.stock_quantity) : "");
     setNotes("");
     setDialogOpen(true);
+  };
+
+  const openEdit = (p: Product) => {
+    setEditForm({
+      name: p.name,
+      description: p.description ?? "",
+      price: p.price != null ? String(p.price) : "",
+      cost: p.cost != null ? String(p.cost) : "",
+      stock_quantity: String(p.stock_quantity ?? 0),
+      min_stock_alert: String(p.min_stock_alert ?? 5),
+      category_id: p.category_id ?? "",
+    });
+    setEditTarget(p);
   };
 
   return (
@@ -298,20 +391,23 @@ const Estoque = () => {
                                   <ArrowDownCircle className="h-4 w-4" /> Saída
                                 </Button>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="outline"
-                                  onClick={() => openMovement(p, "adjustment")}
+                                  onClick={() => openEdit(p)}
+                                  aria-label="Editar produto"
+                                  title="Editar produto"
                                 >
-                                  <Settings2 className="h-4 w-4" /> Ajuste
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
                                 <Button
-                                  size="sm"
+                                  size="icon"
                                   variant="outline"
                                   onClick={() => setDeleteTarget(p)}
                                   className="text-destructive hover:text-destructive"
                                   aria-label="Excluir produto"
+                                  title="Excluir produto"
                                 >
-                                  <Trash2 className="h-4 w-4" /> Excluir
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
                               </>
                             )}
@@ -490,6 +586,132 @@ const Estoque = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!editTarget} onOpenChange={(o) => !o && setEditTarget(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Editar produto</DialogTitle>
+            <DialogDescription>
+              Atualize os dados do produto. Alterar a quantidade gera uma movimentação de ajuste no histórico.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              editMutation.mutate();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Nome *</Label>
+              <Input
+                id="edit-name"
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Descrição</Label>
+              <Textarea
+                id="edit-description"
+                value={editForm.description}
+                onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-price">Preço (R$) *</Label>
+                <Input
+                  id="edit-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editForm.price}
+                  onChange={(e) => setEditForm({ ...editForm, price: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-cost">Custo (R$)</Label>
+                <Input
+                  id="edit-cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editForm.cost}
+                  onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="edit-stock">Estoque (un)</Label>
+                <Input
+                  id="edit-stock"
+                  type="number"
+                  min="0"
+                  value={editForm.stock_quantity}
+                  onChange={(e) => setEditForm({ ...editForm, stock_quantity: e.target.value })}
+                />
+                {editTarget && (
+                  <p className="text-xs text-muted-foreground">
+                    Atual: {editTarget.stock_quantity} un
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-min">Alerta mínimo</Label>
+                <Input
+                  id="edit-min"
+                  type="number"
+                  min="0"
+                  value={editForm.min_stock_alert}
+                  onChange={(e) => setEditForm({ ...editForm, min_stock_alert: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2 col-span-2">
+                <Label>Categoria</Label>
+                <Select
+                  value={editForm.category_id || "__none__"}
+                  onValueChange={(v) =>
+                    setEditForm({ ...editForm, category_id: v === "__none__" ? "" : v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem categoria</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditTarget(null)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="primary" disabled={editMutation.isPending}>
+                {editMutation.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 };
