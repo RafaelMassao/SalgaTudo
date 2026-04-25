@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History, Trash2, Pencil } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Settings2, Search, Boxes, History, Trash2, Pencil, Plus } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +74,16 @@ const emptyEditForm = {
   category_id: "",
 };
 
+const emptyCreateForm = {
+  name: "",
+  description: "",
+  price: "",
+  cost: "",
+  stock_quantity: "",
+  min_stock_alert: "5",
+  category_id: "",
+};
+
 interface Movement {
   id: string;
   product_id: string | null;
@@ -103,6 +113,10 @@ const Estoque = () => {
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [editTarget, setEditTarget] = useState<Product | null>(null);
   const [editForm, setEditForm] = useState(emptyEditForm);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyCreateForm);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [showNewCategory, setShowNewCategory] = useState(false);
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["products-stock"],
@@ -265,6 +279,75 @@ const Estoque = () => {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!createForm.name.trim()) throw new Error("Informe o nome do produto.");
+      const priceNum = Number(createForm.price);
+      if (Number.isNaN(priceNum) || priceNum < 0) throw new Error("Preço inválido.");
+
+      const payload = {
+        name: createForm.name.trim(),
+        description: createForm.description.trim() || null,
+        price: priceNum,
+        cost: createForm.cost ? Number(createForm.cost) : 0,
+        stock_quantity: Number(createForm.stock_quantity || 0),
+        min_stock_alert: Number(createForm.min_stock_alert || 5),
+        category_id: createForm.category_id || null,
+      };
+
+      const { data, error } = await supabase
+        .from("products")
+        .insert(payload)
+        .select()
+        .single();
+      if (error) throw error;
+
+      if (payload.stock_quantity > 0) {
+        await supabase.from("stock_movements").insert({
+          product_id: data.id,
+          movement_type: "in",
+          quantity: payload.stock_quantity,
+          user_id: user?.id ?? null,
+          notes: "Estoque inicial",
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["products-stock"] });
+      qc.invalidateQueries({ queryKey: ["products"] });
+      qc.invalidateQueries({ queryKey: ["stock-movements"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-low-stock"] });
+      toast.success("Produto cadastrado!");
+      setCreateOpen(false);
+      setCreateForm(emptyCreateForm);
+      setShowNewCategory(false);
+      setNewCategoryName("");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const createCategoryMutation = useMutation({
+    mutationFn: async (name: string) => {
+      if (!isAdmin) throw new Error("Apenas administradores podem criar categorias.");
+      const { data, error } = await supabase
+        .from("categories")
+        .insert({ name: name.trim() })
+        .select()
+        .single();
+      if (error) throw error;
+      return data as Category;
+    },
+    onSuccess: (cat) => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+      setCreateForm((f) => ({ ...f, category_id: cat.id }));
+      setShowNewCategory(false);
+      setNewCategoryName("");
+      toast.success("Categoria criada!");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+
   const filtered = products.filter((p) =>
     p.name.toLowerCase().includes(search.toLowerCase()),
   );
@@ -292,11 +375,27 @@ const Estoque = () => {
 
   return (
     <AppLayout title="Estoque">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-foreground">Estoque</h2>
-        <p className="text-sm text-muted-foreground">
-          Registre entradas, saídas e ajustes manuais. Veja o histórico de movimentações.
-        </p>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">Estoque</h2>
+          <p className="text-sm text-muted-foreground">
+            Cadastre produtos, registre entradas, saídas e ajustes. Veja o histórico de movimentações.
+          </p>
+        </div>
+        {isAdmin && (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setCreateForm(emptyCreateForm);
+              setShowNewCategory(false);
+              setNewCategoryName("");
+              setCreateOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            Adicionar Produto
+          </Button>
+        )}
       </div>
 
       <Tabs defaultValue="produtos" className="w-full">
@@ -707,6 +806,174 @@ const Estoque = () => {
               </Button>
               <Button type="submit" variant="primary" disabled={editMutation.isPending}>
                 {editMutation.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Novo produto</DialogTitle>
+            <DialogDescription>
+              Cadastre um novo produto no catálogo.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              createMutation.mutate();
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Nome *</Label>
+              <Input
+                id="create-name"
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                placeholder="Ex: Coxinha de frango"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="create-description">Descrição</Label>
+              <Textarea
+                id="create-description"
+                value={createForm.description}
+                onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
+                placeholder="Opcional"
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="create-price">Preço (R$) *</Label>
+                <Input
+                  id="create-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={createForm.price}
+                  onChange={(e) => setCreateForm({ ...createForm, price: e.target.value })}
+                  placeholder="0,00"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create-cost">Custo (R$)</Label>
+                <Input
+                  id="create-cost"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={createForm.cost}
+                  onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })}
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="create-stock">Estoque inicial</Label>
+                <Input
+                  id="create-stock"
+                  type="number"
+                  min="0"
+                  value={createForm.stock_quantity}
+                  onChange={(e) => setCreateForm({ ...createForm, stock_quantity: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="create-min">Alerta mínimo</Label>
+                <Input
+                  id="create-min"
+                  type="number"
+                  min="0"
+                  value={createForm.min_stock_alert}
+                  onChange={(e) => setCreateForm({ ...createForm, min_stock_alert: e.target.value })}
+                  placeholder="5"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Categoria</Label>
+              {!showNewCategory ? (
+                <div className="flex gap-2">
+                  <Select
+                    value={createForm.category_id || "__none__"}
+                    onValueChange={(v) =>
+                      setCreateForm({ ...createForm, category_id: v === "__none__" ? "" : v })
+                    }
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Sem categoria</SelectItem>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowNewCategory(true)}
+                    aria-label="Nova categoria"
+                    title="Nova categoria"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Nome da categoria"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                    onClick={() => createCategoryMutation.mutate(newCategoryName)}
+                  >
+                    Criar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowNewCategory(false);
+                      setNewCategoryName("");
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" variant="primary" disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Salvando..." : "Salvar"}
               </Button>
             </DialogFooter>
           </form>
